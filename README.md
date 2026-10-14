@@ -72,93 +72,69 @@ This project uses **three TinyFish products** and real browser agents, not canne
 ## 🏗️ Architecture
 
 ```mermaid
-flowchart LR
-    U(["👤 You<br/>type a locality"]) --> UI
+flowchart TB
+    U(["👤 You type a locality"]) --> B["🖥️ Browser UI<br/>live agent cards · map · listings · digest"]
+    B -- "POST /api/scan" --> JOB["⚙️ FastAPI job runner"]
+    JOB -- "SSE: live steps · pins · verdict" --> B
+    JOB --> PIPE["pipeline.scan()"]
 
-    subgraph Browser["🖥️ Browser: web/"]
-        UI["Scan form"]
-        CARDS["Live agent cards<br/>iframe + step log"]
-        MAP["Leaflet map<br/>pins · ring · heat"]
-        TABS["Listings · Circle rate<br/>Digest · Compare"]
-    end
-
-    subgraph Server["⚙️ FastAPI: server.py"]
-        JOB["Job runner<br/>replayable SSE stream"]
-        PIPE["pipeline.scan()"]
-        CLEAN["clean.py<br/>units · dedupe · outliers · gap"]
-        GEO["geo.py<br/>geocode · amenities · score"]
-        STORE[("data/<br/>runs · history · circle rates")]
-    end
-
-    subgraph TF["🐟 TinyFish cloud"]
-        AG["Agent API<br/>real browsers"]
-        SE["Search API"]
-        FE["Fetch API"]
-    end
-
-    subgraph OSM["🗺️ OpenStreetMap"]
-        NOM["Nominatim / Photon<br/>geocoding"]
-        OVP["Overpass<br/>amenities"]
-    end
-
-    PORTALS[["99acres · MagicBricks · Housing.com<br/>RERA · DDA · any site"]]
-
-    UI -- "POST /api/scan" --> JOB
-    JOB --> PIPE
     PIPE --> AG
-    PIPE --> SE
-    PIPE --> FE
-    AG <--> PORTALS
-    PIPE --> GEO
-    GEO --> NOM
-    GEO --> OVP
-    PIPE --> CLEAN
-    CLEAN --> STORE
-    JOB -- "SSE events" --> CARDS
-    JOB -- "SSE events" --> MAP
-    JOB -- "SSE events" --> TABS
-    AG -. "live stream URL" .-> CARDS
+    PIPE --> SF
+    subgraph TF["🐟 TinyFish cloud"]
+        AG["Agent API<br/>real browsers + live view"]
+        SF["Search API + Fetch API"]
+    end
+
+    AG --> PORTALS["🏠 Property portals<br/>99acres · MagicBricks · Housing.com"]
+    AG --> GOVT["🏛️ Govt pages<br/>circle rates · RERA · DDA"]
+    SF --> GOVT
+
+    PIPE --> GEO["geo.py<br/>geocode · amenities"] --> OSM["🗺️ OpenStreetMap<br/>Nominatim · Overpass"]
+
+    PORTALS -- "listings JSON" --> CLEAN["clean.py<br/>sq yd · dedupe · outliers · gap"]
+    GOVT -- "circle rate + evidence" --> CLEAN
+    OSM -- "amenity score" --> CLEAN
+    CLEAN --> STORE[("data/<br/>runs · history · trend")]
 ```
 
 ## ⚡ What happens when you press "Release the agents"
 
 ```mermaid
+%%{init: {'sequence': {'actorMargin': 24, 'width': 120, 'messageMargin': 28}}}%%
 sequenceDiagram
     autonumber
     actor You
-    participant UI as Browser UI
+    participant UI as Browser
     participant API as FastAPI
-    participant TF as TinyFish Agents
-    participant SF as TinyFish Search + Fetch
+    participant TF as TinyFish Agent
+    participant SF as Search+Fetch
     participant OSM as OpenStreetMap
 
-    You->>UI: "Sector 150, Noida" → Release the agents
+    You->>UI: Sector 150, Noida → Release
     UI->>API: POST /api/scan
-    API-->>UI: job_id
-    UI->>API: GET /api/jobs/{id}/events (SSE)
-    API->>OSM: Geocode the locality (validated)
-    API-->>UI: geo → map flies there, 1 km ring drawn
+    API-->>UI: job_id + SSE stream
+    API->>OSM: geocode (validated)
+    API-->>UI: map flies there
 
-    par One agent per portal
-        API->>TF: agent.stream(99acres, goal, schema)
-        TF-->>API: STREAMING_URL, PROGRESS…
-        API-->>UI: live iframe + steps
-    and
-        API->>TF: agent.stream(MagicBricks, goal, schema)
-        TF-->>API: STREAMING_URL, PROGRESS…
-        API-->>UI: live iframe + steps
+    par 99acres agent
+        API->>TF: stream(goal, schema)
+        TF-->>UI: live browser view
+        TF-->>API: steps…
+    and MagicBricks agent
+        API->>TF: stream(goal, schema)
+        TF-->>API: steps…
     and Circle rate
-        API->>SF: search (open + gov.in) → fetch top pages
-        API->>TF: agent.stream(best page, circle-rate goal)
-        TF-->>API: rate + unit + evidence
+        API->>SF: search gov.in + fetch
+        API->>TF: circle-rate agent
+        TF-->>API: rate + evidence
     and Neighbourhood
-        API->>OSM: Overpass: schools, hospitals, metro, parks
+        API->>OSM: Overpass amenities
     end
 
-    TF-->>API: COMPLETE {listings: [...]}
-    API-->>UI: pins appear as each portal finishes
-    API->>API: clean → dedupe → outliers → gap → score → digest → save
-    API-->>UI: result → verdict, table, trend
+    TF-->>API: COMPLETE · listings JSON
+    API-->>UI: pins appear per portal
+    API->>API: clean · gap · score · save
+    API-->>UI: verdict · table · trend
 ```
 
 ## 🏛️ The circle-rate pipeline
@@ -188,7 +164,7 @@ flowchart TD
 ## 🧹 From messy listings to a verdict
 
 ```mermaid
-flowchart LR
+flowchart TD
     RAW["Raw agent JSON<br/>'₹1.30 Cr' · '93.65 sqm (1,008 sqft)'"] --> P["Parse text fallbacks<br/>lakh/crore → ₹ · area text → number + unit"]
     P --> U["Normalise units → sq yd<br/>sq ft ÷ 9 · sq m × 1.196 · acre × 4840"]
     U --> X{"Unit known?"}
