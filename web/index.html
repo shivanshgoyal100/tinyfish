@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PlotScout</title>
+<meta name="description" content="A TinyFish personal agent that checks plot prices against the circle rate and maps what is nearby.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M4 16c5-7 13-8 19-3l5-4v14l-5-4c-6 5-14 4-19-3z' fill='%23ff6b35'/><circle cx='10' cy='15' r='1.6' fill='white'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 16c5-7 13-8 19-3l5-4v14l-5-4c-6 5-14 4-19-3z" fill="currentColor"/><circle cx="10" cy="15" r="1.6" fill="var(--surface)"/></svg>
+    <div>
+      <div class="brand-name">PlotScout</div>
+      <div class="brand-sub">Land price locality map · a TinyFish personal agent</div>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-view="scan" role="tab">Scan</button>
+    <button class="tab" data-view="compare" role="tab">Compare</button>
+    <button class="tab" data-view="tools" role="tab">Agent tools</button>
+  </nav>
+  <div class="top-right">
+    <span id="keyPill" class="pill">TinyFish …</span>
+    <button id="themeBtn" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">
+      <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" fill="currentColor"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="side">
+    <!-- SCAN -->
+    <section class="view" id="view-scan">
+      <form id="scanForm" class="card form" autocomplete="off">
+        <h2>Scan a locality</h2>
+        <p class="hint">TinyFish agents open each portal in a real browser, search for plots and return structured listings. You watch them live below.</p>
+        <div class="row2">
+          <label>Locality<input name="name" placeholder="Sector 150" required></label>
+          <label>City<input name="city" placeholder="Noida" required></label>
+        </div>
+        <label>State
+          <select name="state" id="stateSel"></select>
+        </label>
+        <div class="presets" id="presets"></div>
+
+        <fieldset>
+          <legend>Portals for the agents</legend>
+          <div id="portalChecks" class="checks"></div>
+          <label class="sub">Add any other listing site (one agent per URL)
+            <input name="custom" placeholder="e.g. https://www.squareyards.com, nobroker.in">
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Your filters <span class="muted">(optional)</span></legend>
+          <div class="row3">
+            <label>Min sq yd<input name="min_area" type="number" min="0" step="10" placeholder="100"></label>
+            <label>Max sq yd<input name="max_area" type="number" min="0" step="10" placeholder="300"></label>
+            <label>Budget ₹ lakh<input name="budget" type="number" min="0" step="1" placeholder="90"></label>
+          </div>
+        </fieldset>
+
+        <div class="toggles">
+          <label class="switch"><input type="checkbox" name="auto_circle" checked><span></span>
+            Find the circle rate with TinyFish Search + Fetch + Agent if none is on file</label>
+          <label class="switch"><input type="checkbox" name="stealth"><span></span>
+            Stealth browser profile (for portals that block bots)</label>
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="scanBtn" type="submit">
+            <svg viewBox="0 0 24 24"><path d="M3 12c4-6 11-7 16-3l3-3v12l-3-3c-5 4-12 3-16-3z" fill="currentColor"/></svg>
+            Release the agents
+          </button>
+          <button class="btn ghost" id="stopBtn" type="button" hidden>Stop</button>
+        </div>
+      </form>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Your localities</h3>
+          <span class="muted small" id="locCount"></span>
+        </div>
+        <div id="locList" class="loc-list"><p class="empty">No scans yet. Run one above; every run is saved and builds the price trend.</p></div>
+        <p class="hint small">★ adds a locality to the weekly watchlist used by <code>run_weekly.py</code>.</p>
+      </div>
+    </section>
+
+    <!-- COMPARE -->
+    <section class="view" id="view-compare" hidden>
+      <div class="card form">
+        <h2>Compare two localities</h2>
+        <p class="hint">Price, circle-rate gap and amenity score side by side. Compare inside the same city where you can: OpenStreetMap coverage differs between areas.</p>
+        <label>Locality A<select id="cmpA"></select></label>
+        <label>Locality B<select id="cmpB"></select></label>
+      </div>
+      <div id="cmpOut"></div>
+    </section>
+
+    <!-- TOOLS -->
+    <section class="view" id="view-tools" hidden>
+      <form id="reraForm" class="card form">
+        <h2>RERA check</h2>
+        <p class="hint">An agent searches the state RERA portal for a project. First-pass check only, not legal advice.</p>
+        <label>Project name<input name="project" placeholder="e.g. Escon Villas" required></label>
+        <div class="row2">
+          <label>Promoter <span class="muted">(optional)</span><input name="promoter"></label>
+          <label>State<select name="state" class="stateList"></select></label>
+        </div>
+        <input type="hidden" name="locality">
+        <button class="btn primary sm" type="submit">Check on RERA</button>
+        <div id="reraOut"></div>
+      </form>
+
+      <form id="auctionForm" class="card form">
+        <h2>Government land auctions</h2>
+        <p class="hint">An agent visits a development authority site and lists current plot schemes and e-auctions.</p>
+        <div class="row2">
+          <label>State<select name="state" id="auctionState" class="stateList"></select></label>
+          <label>Authority<select name="authority" id="auctionAuth"></select></label>
+        </div>
+        <label>…or any authority URL<input name="url" placeholder="https://"></label>
+        <label>Near <span class="muted">(optional)</span><input name="place" placeholder="e.g. Sector 150"></label>
+        <button class="btn primary sm" type="submit">Find schemes</button>
+        <div id="auctionOut"></div>
+      </form>
+
+      <form id="customForm" class="card form">
+        <h2>Ask an agent anything</h2>
+        <p class="hint">Any page, any plain-language goal. Useful for one-off checks on a listing or a notice.</p>
+        <label>Start URL<input name="url" placeholder="https://www.99acres.com" required></label>
+        <label>Goal<textarea name="goal" rows="3" required placeholder="Open the first plot listing in Sector 150 Noida and return its price, area, facing and amenities as JSON."></textarea></label>
+        <label class="switch"><input type="checkbox" name="stealth"><span></span>Stealth profile</label>
+        <button class="btn primary sm" type="submit">Run agent</button>
+        <div id="customOut"></div>
+      </form>
+    </section>
+
+    <footer class="powered">
+      <span>Uses TinyFish</span>
+      <b>Agent API</b><i>streaming</i>
+      <b>Search API</b><b>Fetch API</b>
+      <span class="sep">·</span><span>OpenStreetMap, Nominatim, Overpass</span>
+    </footer>
+  </aside>
+
+  <main class="stage">
+    <div id="map"></div>
+
+    <div id="welcome" class="welcome card">
+      <div class="eyebrow">Weekly land-price errand, automated</div>
+      <h1>Give it a locality. See if plots are over or under the circle rate, and what's around them.</h1>
+      <ol>
+        <li><b>TinyFish agents</b> search 99acres, MagicBricks and Housing.com in parallel, live.</li>
+        <li><b>Search + Fetch + Agent</b> look up the government circle rate.</li>
+        <li><b>OpenStreetMap</b> adds schools, hospitals, metro, parks and markets.</li>
+        <li>Every run is saved, so a price trend builds up week by week.</li>
+      </ol>
+      <div class="presets" id="welcomePresets"></div>
+    </div>
+
+    <div id="summary" class="summary card" hidden></div>
+
+    <div class="map-tools card" id="mapTools" hidden>
+      <div class="chips" id="layerChips"></div>
+      <div class="map-tools-row">
+        <label class="mini-switch"><input type="checkbox" id="heatToggle"><span></span>Price heat</label>
+        <label class="mini-switch"><input type="checkbox" id="matchToggle"><span></span>Only my filters</label>
+        <div class="seg" id="ringSeg"><button data-r="500">500 m</button><button data-r="1000" class="on">1 km</button></div>
+      </div>
+    </div>
+
+    <section class="dock" id="dock">
+      <div class="dock-head">
+        <div class="dock-tabs" role="tablist">
+          <button class="dtab active" data-pane="agents">Live agents <span class="count" id="agentCount">0</span></button>
+          <button class="dtab" data-pane="listings">Listings <span class="count" id="listCount">0</span></button>
+          <button class="dtab" data-pane="circle">Circle rate</button>
+          <button class="dtab" data-pane="digest">Weekly digest</button>
+        </div>
+        <div class="dock-status" id="jobStatus"></div>
+        <button class="icon-btn" id="dockToggle" title="Collapse panel" aria-label="Collapse panel">
+          <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        </button>
+      </div>
+      <div class="dock-body">
+        <div class="pane active" id="pane-agents">
+          <div id="agentGrid" class="agent-grid">
+            <div class="empty-pane">
+              <p>When you start a scan, each TinyFish agent appears here with its <b>live browser view</b>, every step it takes, and what it found.</p>
+            </div>
+          </div>
+        </div>
+        <div class="pane" id="pane-listings"></div>
+        <div class="pane" id="pane-circle"></div>
+        <div class="pane" id="pane-digest"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

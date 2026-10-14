@@ -1,0 +1,5 @@
+tinyfish>=0.9
+httpx
+python-dotenv
+fastapi
+uvicorn

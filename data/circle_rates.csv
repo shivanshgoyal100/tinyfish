@@ -1,0 +1,4 @@
+locality,city,rate_inr,unit,category,source_url,as_of,origin
+Sector 150,Noida,0,per_sqm,residential,PASTE_OFFICIAL_URL,PASTE_DATE,official
+Sector 82,Gurugram,0,per_sqyd,residential,PASTE_OFFICIAL_URL,PASTE_DATE,official
+Greater Noida West,Greater Noida,0,per_sqm,residential,PASTE_OFFICIAL_URL,PASTE_DATE,official
